@@ -210,7 +210,11 @@ impl Event {
     /// normally 1, but for batched events possibly > 1
     pub fn len(&self) -> usize {
         if self.is_batch {
-            self.data.suffix().value().as_array().map_or(0, Vec::len)
+            self.data
+                .borrow_dependent()
+                .value()
+                .as_array()
+                .map_or(0, Vec::len)
         } else {
             1
         }
@@ -222,7 +226,7 @@ impl Event {
         self.is_batch
             && self
                 .data
-                .suffix()
+                .borrow_dependent()
                 .value()
                 .as_array()
                 .map_or(true, Vec::is_empty)
@@ -253,7 +257,7 @@ impl Event {
             }
         } else {
             self.data
-                .suffix()
+                .borrow_dependent()
                 .meta()
                 .get("correlation")
                 .map(Value::clone_static)
@@ -277,7 +281,7 @@ impl<'value> Iterator for ValueMetaIter<'value> {
             let r = self
                 .event
                 .data
-                .suffix()
+                .borrow_dependent()
                 .value()
                 .get_idx(self.idx)
                 .and_then(|e| {
@@ -287,7 +291,7 @@ impl<'value> Iterator for ValueMetaIter<'value> {
             self.idx += 1;
             r
         } else if self.idx == 0 {
-            let v = self.event.data.suffix();
+            let v = self.event.data.borrow_dependent();
             self.idx += 1;
             Some((&v.value(), &v.meta()))
         } else {
@@ -322,14 +326,14 @@ impl<'value> Iterator for ValueIter<'value> {
             let r = self
                 .event
                 .data
-                .suffix()
+                .borrow_dependent()
                 .value()
                 .get_idx(self.idx)
                 .and_then(|e| e.get("data")?.get("value"));
             self.idx += 1;
             r
         } else if self.idx == 0 {
-            let v = &self.event.data.suffix().value();
+            let v = &self.event.data.borrow_dependent().value();
             self.idx += 1;
             Some(v)
         } else {
@@ -424,7 +428,7 @@ mod test {
         let ack_with_timing = clone.insight_ack_with_timing(100);
         assert_eq!(ack_with_timing.cb, CbAction::Ack);
         assert!(ack_with_timing.op_meta.contains_key(1));
-        let (_, m) = ack_with_timing.data.parts();
+        let m = ack_with_timing.data.borrow_dependent().meta();
         assert_eq!(Some(100), m.get_u64("time"));
 
         let mut clone2 = e.clone();

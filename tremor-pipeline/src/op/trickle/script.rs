@@ -139,7 +139,7 @@ impl Operator for Trickle {
     ) -> Result<EventAndInsights> {
         let context = EventContext::new(event.ingest_ns, event.origin_uri);
 
-        let data = event.data.suffix();
+        let data = event.data.borrow_dependent();
         // This lifetimes will be `&'run mut Value<'event>` as that is the
         // requirement of the `self.runtime.run` we can not declare them
         // as the trait function for the operator doesn't allow that

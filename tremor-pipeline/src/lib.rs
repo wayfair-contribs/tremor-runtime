@@ -14,7 +14,7 @@
 
 //! Tremor event processing pipeline
 
-#![deny(warnings)]
+// #![deny(warnings)] // TODO during refactor
 #![deny(missing_docs)]
 #![recursion_limit = "1024"]
 #![deny(

@@ -343,20 +343,39 @@ impl WindowTrait for TumblingWindowOnTime {
             .map(|script| {
                 // TODO avoid origin_uri clone here
                 let context = EventContext::new(event.ingest_ns, event.origin_uri.clone());
-                let (mut unwind_event, mut event_meta) = event.data.parts();
-                let value = script.run(
-                    &context,
-                    AggrType::Emit,
-                    &mut unwind_event,  // event
-                    &mut Value::null(), // state for the window
-                    &mut event_meta,    // $
-                )?;
-                let data = match value {
-                    Return::Emit { value, .. } => value.as_u64(),
-                    Return::EmitEvent { .. } => unwind_event.as_u64(),
-                    Return::Drop { .. } => None,
-                };
-                data.ok_or_else(|| Error::from("Data based window didn't provide a valid value"))
+                // let (mut unwind_event, mut event_meta) = event.data.parts();
+                // let value = script.run(
+                //     &context,
+                //     AggrType::Emit,
+                //     &mut unwind_event,  // event
+                //     &mut Value::null(), // state for the window
+                //     &mut event_meta,    // $
+                // )?;
+                // let data = match value {
+                //     Return::Emit { value, .. } => value.as_u64(),
+                //     Return::EmitEvent { .. } => unwind_event.as_u64(),
+                //     Return::Drop { .. } => None,
+                // };
+
+                event.data.with_dependent_mut(|_, parsed| {
+                    let value = script.run(
+                        &context,
+                        AggrType::Emit,
+                        &mut parsed.value(), // unwind_event
+                        &mut Value::null(),  // state for the window
+                        &mut parsed.meta(),  // $
+                    )?;
+
+                    let data = match value {
+                        Return::Emit { value, .. } => value.as_u64(),
+                        Return::EmitEvent { .. } => parsed.value().as_u64(),
+                        Return::Drop { .. } => None,
+                    };
+
+                    data.ok_or_else(|| {
+                        Error::from("Data based window didn't provide a valid value")
+                    })
+                })
             })
             .unwrap_or(Ok(event.ingest_ns))?;
         Ok(self.get_window_event(time))
@@ -424,22 +443,26 @@ impl WindowTrait for TumblingWindowOnNumber {
             .as_ref()
             .and_then(|script| script.suffix().script.as_ref())
             .map_or(Ok(1), |script| {
+                todo!("Deduplicate with above");
                 // TODO avoid origin_uri clone here
-                let context = EventContext::new(event.ingest_ns, event.origin_uri.clone());
-                let (mut unwind_event, mut event_meta) = event.data.parts();
-                let value = script.run(
-                    &context,
-                    AggrType::Emit,
-                    &mut unwind_event,  // event
-                    &mut Value::null(), // state for the window
-                    &mut event_meta,    // $
-                )?;
-                let data = match value {
-                    Return::Emit { value, .. } => value.as_u64(),
-                    Return::EmitEvent { .. } => unwind_event.as_u64(),
-                    Return::Drop { .. } => None,
-                };
-                data.ok_or_else(|| Error::from("Data based window didn't provide a valid value"))
+                // let context = EventContext::new(event.ingest_ns, event.origin_uri.clone());
+                // let (mut unwind_event, mut event_meta) = event.data.parts();
+                // let value = script.run(
+                //     &context,
+                //     AggrType::Emit,
+                //     &mut unwind_event,  // event
+                //     &mut Value::null(), // state for the window
+                //     &mut event_meta,    // $
+                // )?;
+                // let data = match value {
+                //     Return::Emit { value, .. } => value.as_u64(),
+                //     Return::EmitEvent { .. } => unwind_event.as_u64(),
+                //     Return::Drop { .. } => None,
+                // };
+                // data.ok_or_else(|| Error::from("Data based window didn't provide a valid value"))
+                Err(Error::from(
+                    "Data based window didn't provide a valid value",
+                ))
             })?;
 
         // If we're above count we emit and  set the new count to 1
@@ -529,7 +552,8 @@ fn execute_select_and_having(
     origin_uri: Option<EventOriginUri>,
     transactional: bool,
 ) -> Result<Option<(Cow<'static, str>, Event)>> {
-    let (event_payload, event_meta) = event.data.parts();
+    let event_payload = event.data.borrow_dependent().value();
+    let event_meta = event.data.borrow_dependent().meta();
 
     let value = stmt
         .target
@@ -583,13 +607,19 @@ fn accumulate(
     // track transactional state for the given event
     group.transactional = group.transactional || event.transactional;
 
-    let (event_data, event_meta) = event.data.parts();
     for aggr in &mut group.aggrs {
         let invocable = &mut aggr.invocable;
         let mut argv: Vec<SCow<Value>> = Vec::with_capacity(aggr.args.len());
         let mut argv1: Vec<&Value> = Vec::with_capacity(aggr.args.len());
         for arg in &aggr.args {
-            let result = arg.run(opts, env, event_data, state, event_meta, &local_stack)?;
+            let result = arg.run(
+                opts,
+                env,
+                event.data.borrow_dependent().value(),
+                state,
+                event.data.borrow_dependent().meta(),
+                &local_stack,
+            )?;
             argv.push(result);
         }
         for arg in &argv {
@@ -682,7 +712,8 @@ impl Operator for TrickleSelect {
         // Before any select processing, we filter by where clause
         //
         if let Some(guard) = &stmt.maybe_where {
-            let (unwind_event, event_meta) = event.data.parts();
+            let parsed_event = event.data.borrow_dependent();
+
             let env = Env {
                 context: &ctx,
                 consts: &consts,
@@ -690,7 +721,14 @@ impl Operator for TrickleSelect {
                 meta: &node_meta,
                 recursion_limit: tremor_script::recursion_limit(),
             };
-            let test = guard.run(opts, &env, unwind_event, state, event_meta, &local_stack)?;
+            let test = guard.run(
+                opts,
+                &env,
+                parsed_event.value(),
+                state,
+                parsed_event.meta(),
+                &local_stack,
+            )?;
             if let Some(test) = test.as_bool() {
                 if !test {
                     return Ok(EventAndInsights::default());
@@ -707,7 +745,7 @@ impl Operator for TrickleSelect {
         let mut events = vec![];
 
         let mut group_values = {
-            let data = event.data.suffix();
+            let data = event.data.borrow_dependent();
             if let Some(group_by) = &stmt.maybe_group_by {
                 group_by.generate_groups(&ctx, data.value(), state, &node_meta, data.meta())?
             } else {
@@ -724,48 +762,50 @@ impl Operator for TrickleSelect {
             let group_value = Value::from(vec![()]);
             let group_str = sorted_serialize(&group_value)?;
 
-            let data = event.data.suffix();
+            let data = event.data.borrow_dependent();
+
             // This is sound since we're transmuting immutable to mutable
             // We can't specify the 'lifetime' of the event or it would be
             // `&'run mut Value<'event>`
-            let unwind_event = unsafe { data.force_value_mut() };
-            let event_meta = data.meta();
+            // let unwind_event = unsafe { data.force_value_mut() };
+            // let event_meta = data.meta();
+            todo!();
 
-            consts.group = group_value.clone_static();
-            consts.group.push(group_str)?;
+            // consts.group = group_value.clone_static();
+            // consts.group.push(group_str)?;
 
-            let env = Env {
-                context: &ctx,
-                consts: &consts,
-                aggrs: &NO_AGGRS,
-                meta: &node_meta,
-                recursion_limit: tremor_script::recursion_limit(),
-            };
-            let value =
-                stmt.target
-                    .run(opts, &env, unwind_event, state, event_meta, &local_stack)?;
+            // let env = Env {
+            //     context: &ctx,
+            //     consts: &consts,
+            //     aggrs: &NO_AGGRS,
+            //     meta: &node_meta,
+            //     recursion_limit: tremor_script::recursion_limit(),
+            // };
+            // let value =
+            //     stmt.target
+            //         .run(opts, &env, unwind_event, state, event_meta, &local_stack)?;
 
-            let result = value.into_owned();
-            // evaluate having clause, if one exists
-            if let Some(guard) = &stmt.maybe_having {
-                let test = guard.run(opts, &env, &result, state, &NULL, &local_stack)?;
-                if let Some(test) = test.as_bool() {
-                    if !test {
-                        return Ok(EventAndInsights::default());
-                    }
-                } else {
-                    let s: &Select = &stmt;
-                    return Err(tremor_script::errors::query_guard_not_bool_err(
-                        s, guard, &test, &node_meta,
-                    )
-                    .into());
-                }
-            }
-            *unwind_event = result;
-            // We manually drop this here to inform rust that we no longer
-            // borrow values from event
-            drop(group_values);
-            return Ok(event.into());
+            // let result = value.into_owned();
+            // // evaluate having clause, if one exists
+            // if let Some(guard) = &stmt.maybe_having {
+            //     let test = guard.run(opts, &env, &result, state, &NULL, &local_stack)?;
+            //     if let Some(test) = test.as_bool() {
+            //         if !test {
+            //             return Ok(EventAndInsights::default());
+            //         }
+            //     } else {
+            //         let s: &Select = &stmt;
+            //         return Err(tremor_script::errors::query_guard_not_bool_err(
+            //             s, guard, &test, &node_meta,
+            //         )
+            //         .into());
+            //     }
+            // }
+            // *unwind_event = result;
+            // // We manually drop this here to inform rust that we no longer
+            // // borrow values from event
+            // drop(group_values);
+            // return Ok(event.into());
         }
         if group_values.is_empty() {
             group_values.push(vec![Value::null()])

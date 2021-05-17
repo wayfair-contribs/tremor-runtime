@@ -79,13 +79,22 @@ impl Operator for Summerization {
         _state: &mut Value<'static>,
         event: Event,
     ) -> Result<EventAndInsights> {
-        let (data, meta) = event.data.parts();
-        if let Some(s) = data.as_str() {
-            let mut summary = self.model.summarize(&[s]);
-            if let Some(s) = summary.pop() {
-                meta.insert("summary", s)?;
+        // let (data, meta) = event.data.parts();
+        // if let Some(s) = data.as_str() {
+        //     let mut summary = self.model.summarize(&[s]);
+        //     if let Some(s) = summary.pop() {
+        //         meta.insert("summary", s)?;
+        //     }
+        // }
+        // Ok(EventAndInsights::from(event))
+        event.data.with_dependent_mut(|_, parsed| {
+            if let Some(s) = parsed.value().as_str() {
+                let mut summary = self.model.summarize(&[s]);
+                if let Some(s) = summary.pop() {
+                    parsed.meta().insert("summary", s)?;
+                }
             }
-        }
-        Ok(EventAndInsights::from(event))
+            Ok(EventAndInsights::from(event))
+        })
     }
 }

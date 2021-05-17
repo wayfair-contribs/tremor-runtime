@@ -111,7 +111,7 @@ impl Operator for SimpleSelect {
         // Before any select processing, we filter by where clause
         //
         if let Some(guard) = &stmt.maybe_where {
-            let (unwind_event, event_meta) = event.data.parts();
+            let parsed = event.data.borrow_dependent();
             let env = Env {
                 context: &ctx,
                 consts: &consts,
@@ -119,7 +119,14 @@ impl Operator for SimpleSelect {
                 meta: &node_meta,
                 recursion_limit: tremor_script::recursion_limit(),
             };
-            let test = guard.run(opts, &env, unwind_event, state, event_meta, &local_stack)?;
+            let test = guard.run(
+                opts,
+                &env,
+                parsed.value(),
+                state,
+                parsed.meta(),
+                &local_stack,
+            )?;
             if let Some(test) = test.as_bool() {
                 if !test {
                     return Ok(EventAndInsights::default());
@@ -131,7 +138,7 @@ impl Operator for SimpleSelect {
         }
 
         if let Some(guard) = &stmt.maybe_having {
-            let (unwind_event, event_meta) = event.data.parts();
+            let parsed = event.data.borrow_dependent();
             let env = Env {
                 context: &ctx,
                 consts: &consts,
@@ -139,7 +146,14 @@ impl Operator for SimpleSelect {
                 meta: &node_meta,
                 recursion_limit: tremor_script::recursion_limit(),
             };
-            let test = guard.run(opts, &env, unwind_event, state, event_meta, &local_stack)?;
+            let test = guard.run(
+                opts,
+                &env,
+                parsed.value(),
+                state,
+                parsed.meta(),
+                &local_stack,
+            )?;
             if let Some(test) = test.as_bool() {
                 if !test {
                     return Ok(EventAndInsights::default());

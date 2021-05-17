@@ -50,31 +50,34 @@ impl Operator for History {
         _uid: u64,
         _port: &str,
         _state: &mut Value<'static>,
-        event: Event,
+        mut event: Event,
     ) -> Result<EventAndInsights> {
-        let (_, meta) = event.data.parts();
-        match meta
-            .get_mut(self.config.name.as_str())
-            .and_then(Value::as_array_mut)
-        {
-            Some(ref mut history) => {
-                history.push(Value::from(format!(
-                    "evt: {}({})",
-                    self.config.op, event.id
-                )));
-            }
-            None => {
-                if let Some(ref mut obj) = meta.as_object_mut() {
-                    obj.insert(
-                        self.config.name.clone().into(),
-                        Value::from(vec![Value::from(format!(
-                            "evt: {}({})",
-                            self.config.op, event.id
-                        ))]),
-                    );
+        event.data.with_dependent_mut(|_, parsed| {
+            let meta = parsed.meta_mut();
+            match meta
+                .get_mut(self.config.name.as_str())
+                .and_then(Value::as_array_mut)
+            {
+                Some(ref mut history) => {
+                    history.push(Value::from(format!(
+                        "evt: {}({})",
+                        self.config.op, event.id
+                    )));
                 }
-            }
-        };
+                None => {
+                    if let Some(ref mut obj) = meta.as_object_mut() {
+                        obj.insert(
+                            self.config.name.clone().into(),
+                            Value::from(vec![Value::from(format!(
+                                "evt: {}({})",
+                                self.config.op, event.id
+                            ))]),
+                        );
+                    }
+                }
+            };
+        });
+
         Ok(event.into())
     }
 
@@ -87,7 +90,7 @@ impl Operator for History {
         _state: &Value<'static>,
         signal: &mut Event,
     ) -> Result<EventAndInsights> {
-        let (_, meta) = signal.data.parts();
+        let meta = &mut signal.data.borrow_dependent().meta();
 
         match meta
             .get_mut(self.config.name.as_str())
@@ -165,7 +168,11 @@ mod test {
         let _ = op.on_signal(0, &state, &mut event);
         let _ = op.on_signal(0, &state, &mut event);
 
-        let history = event.data.suffix().meta().get(op.config.name.as_str());
+        let history = event
+            .data
+            .borrow_dependent()
+            .meta()
+            .get(op.config.name.as_str());
 
         match history.as_array() {
             Some(history) => {

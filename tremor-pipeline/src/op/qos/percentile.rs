@@ -117,7 +117,7 @@ impl Operator for Percentile {
         if !insight.op_meta.contains_key(uid) {
             return;
         }
-        let (_, meta) = insight.data.parts();
+        let meta = insight.data.borrow_dependent().meta();
 
         if meta.get("error").is_some()
             || insight.cb == CbAction::Fail

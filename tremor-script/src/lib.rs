@@ -81,12 +81,33 @@ pub use crate::registry::{
 };
 pub use crate::script::{Return, Script};
 use lazy_static::lazy_static;
+use self_cell::self_cell;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ast::{Consts, InvokeAggrFn};
 pub use interpreter::{AggrType, FALSE, NULL, TRUE};
 pub use tremor_common::stry;
 pub use tremor_value::{KnownKey, Object, Value};
+
+// Custom mod to because we can't satisfy missing doc lint for generated.
+#[allow(missing_docs)]
+mod generated {
+    use super::*;
+
+    self_cell!(
+        pub struct LineValue {
+            #[try_from_fn]
+            owner: Vec<Vec<u8>>, // TODO does this still need to be Vec<Vec> or could it be just Vec now? If we move the merge ability into Batch.
+
+            #[covariant]
+            dependent: ValueAndMeta,
+        }
+
+        impl {Debug}
+    );
+}
+
+pub use generated::LineValue;
 
 /// Default recursion limit
 pub static RECURSION_LIMIT: AtomicU32 = AtomicU32::new(1024);
@@ -111,7 +132,7 @@ impl simd_json_derive::Serialize for LineValue {
     where
         W: std::io::Write,
     {
-        self.rent(|d| d.json_write(writer))
+        self.borrow_dependent().json_write(writer)
     }
 }
 
@@ -141,8 +162,14 @@ impl<'event> ValueAndMeta<'event> {
     }
     /// Event value forced to borrowd mutable (uses `mem::transmute`)
     ///
-    /// # Safety
-    /// This isn't save, use with care and reason about mutability!
+    /// Call this function to trigger instant UB!
+    ///
+    /// From the nomicon https://doc.rust-lang.org/nomicon/transmutes.html:
+    /// Transmuting an & to &mut is UB.
+    ///
+    /// - Transmuting an & to &mut is always UB.
+    /// - No you can't do it.
+    /// - No you're not special.
     #[allow(mutable_transmutes, clippy::transmute_ptr_to_ptr, clippy::mut_from_ref)]
     #[must_use]
     pub unsafe fn force_value_mut(&self) -> &mut Value<'event> {
@@ -158,7 +185,12 @@ impl<'event> ValueAndMeta<'event> {
     pub fn meta(&self) -> &Value<'event> {
         &self.m
     }
-    /// Deconstruicts the value into it's parts
+    /// Event metadata
+    #[must_use]
+    pub fn meta_mut(&mut self) -> &mut Value<'event> {
+        &mut self.m
+    }
+    /// Deconstructs the value into it's parts
     #[must_use]
     pub fn into_parts(self) -> (Value<'event>, Value<'event>) {
         (self.v, self.m)
@@ -183,42 +215,71 @@ impl<'v> From<Value<'v>> for ValueAndMeta<'v> {
     }
 }
 
-rental! {
-    /// Tremor script rentals to work around lifetime
-    /// issues
-    pub(crate) mod rentals {
-        use super::*;
+// self_cell!(
+//     pub struct LineValue {
+//         #[try_from_fn]
+//         owner: Vec<Vec<u8>>,
 
-        /// Rental wrapped value with the data it was parsed
-        /// from from
-        #[rental_mut(covariant, debug)]
-        pub struct Value {
-            raw: Vec<Vec<u8>>,
-            parsed: ValueAndMeta<'raw>
-        }
+//         #[covariant]
+//         dependent: ValueAndMeta,
+//     }
+// );
 
+// rental! {
+//     /// Tremor script rentals to work around lifetime
+//     /// issues
+//     pub(crate) mod rentals {
+//         use super::*;
+
+//         /// Rental wrapped value with the data it was parsed
+//         /// from from
+//         #[rental_mut(covariant, debug)]
+//         pub struct Value {
+//             raw: Vec<Vec<u8>>,
+//             parsed: ValueAndMeta<'raw>
+//         }
+
+//     }
+// }
+
+impl LineValue {
+    /// Simple construction.
+    pub fn new(
+        raw: Vec<Vec<u8>>,
+        parsed_builder: impl for<'a> FnOnce(&'a Vec<Vec<u8>>) -> ValueAndMeta<'a>,
+    ) -> Self {
+        let val: Result<Self, ()> = Self::try_from_fn(raw, |raw| Ok(parsed_builder(raw)));
+
+        val.unwrap()
     }
-}
 
-impl rentals::Value {
+    // /// Fallible construction as used by other parts of this project.
+    // pub fn try_new<Err>(
+    //     raw: Vec<Vec<u8>>,
+    //     parsed_builder: for<'a> FnOnce(&'a Vec<Vec<u8>>) -> ValueAndMeta<'a>,
+    // ) -> Result<Self, Err> {
+    //     Self::try_from_fn(raw, parsed_builder
+    // }
+
     /// Borrow the parts (event and metadata) from a rental.
     /// This borrows the data as immutable and then transmutes it
     /// to be mutable.
-    #[allow(mutable_transmutes, clippy::transmute_ptr_to_ptr)]
-    #[must_use]
-    pub fn parts<'value, 'borrow>(
-        &'borrow self,
-    ) -> (&'borrow mut Value<'value>, &'borrow mut Value<'value>)
-    where
-        'borrow: 'value,
-    {
-        unsafe {
-            let data = self.suffix();
-            let unwind_event: &'borrow mut Value<'value> = std::mem::transmute(data.value());
-            let event_meta: &'borrow mut Value<'value> = std::mem::transmute(data.meta());
-            (unwind_event, event_meta)
-        }
-    }
+    // #[allow(mutable_transmutes, clippy::transmute_ptr_to_ptr)]
+    // #[must_use]
+    // pub fn parts<'value, 'borrow>(
+    //     &'borrow self,
+    // ) -> (&'borrow mut Value<'value>, &'borrow mut Value<'value>)
+    // where
+    //     'borrow: 'value,
+    // {
+    //     // let data = self.borrow_dependent();
+
+    //     unsafe {
+    //         let unwind_event: &'borrow mut Value<'value> = std::mem::transmute(self.parsed.value());
+    //         let event_meta: &'borrow mut Value<'value> = std::mem::transmute(self.parsed.meta());
+    //         (unwind_event, event_meta)
+    //     }
+    // }
     /// Consumes an event into another
     /// This function works around a rental limitation that is meant
     /// to protect its users: Rental does not allow you to get both
@@ -246,31 +307,38 @@ impl rentals::Value {
     pub fn consume<'run, E, F>(&'run mut self, other: Self, join_f: F) -> Result<(), E>
     where
         E: std::error::Error,
-        F: Fn(&mut ValueAndMeta<'static>, ValueAndMeta<'static>) -> Result<(), E>,
+        F: Fn(&mut ValueAndMeta<'run>, ValueAndMeta<'run>) -> Result<(), E>,
     {
-        struct ScrewRental {
-            pub parsed: ValueAndMeta<'static>,
-            pub raw: Vec<Vec<u8>>,
-        }
-        #[allow(clippy::transmute_ptr_to_ptr)]
-        unsafe {
-            use std::mem::transmute;
-            let self_unrent: &'run mut ScrewRental = transmute(self);
-            let mut other_unrent: ScrewRental = transmute(other);
-            self_unrent.raw.append(&mut other_unrent.raw);
-            join_f(&mut self_unrent.parsed, other_unrent.parsed)?;
-        }
-        Ok(())
+        todo!()
+        // self.raw.append(&mut other.raw);
+
+        // TODO consume.
+        //self.with_dependent_mut(|(_, parsed)|
+        //join_f(parsed, other.parsed)
+
+        // struct ScrewRental {
+        //     pub parsed: ValueAndMeta<'static>,
+        //     pub raw: Vec<Vec<u8>>,
+        // }
+        // #[allow(clippy::transmute_ptr_to_ptr)]
+        // unsafe {
+        //     use std::mem::transmute;
+        //     let self_unrent: &'run mut ScrewRental = transmute(self);
+        //     let mut other_unrent: ScrewRental = transmute(other);
+        //     self_unrent.raw.append(&mut other_unrent.raw);
+        //     join_f(&mut self_unrent.parsed, other_unrent.parsed)?;
+        // }
+        // Ok(())
     }
 }
 
-impl From<Value<'static>> for rentals::Value {
+impl From<Value<'static>> for LineValue {
     fn from(v: Value<'static>) -> Self {
         Self::new(vec![], |_| ValueAndMeta::from(v))
     }
 }
 
-impl<T1, T2> From<(T1, T2)> for rentals::Value
+impl<T1, T2> From<(T1, T2)> for LineValue
 where
     Value<'static>: From<T1> + From<T2>,
 {
@@ -284,22 +352,11 @@ where
 
 impl Clone for LineValue {
     fn clone(&self) -> Self {
-        // The only safe way to clone a line value is to clone
-        // the data and then turn it into a owned value
-        // then turn this owned value back into a borrowed value
-        // we need to do this dance to 'free' value from the
-        // linked lifetime.
-        // An alternative would be keeping the raw data in an ARC
-        // instead of a Box.
+        let parsed = self.borrow_dependent();
+        // TODO shouldn't this be self.raw? instead of vec![]?
         Self::new(vec![], |_| {
-            let v = self.suffix();
-            ValueAndMeta::from_parts(v.value().clone_static(), v.meta().clone_static())
+            ValueAndMeta::from_parts(parsed.value().clone_static(), parsed.meta().clone_static())
         })
-    }
-}
-impl Default for LineValue {
-    fn default() -> Self {
-        Self::new(vec![], |_| ValueAndMeta::default())
     }
 }
 
@@ -312,13 +369,17 @@ pub enum LineValueDeserError {
     MetaMissing,
 }
 
-impl PartialEq for LineValue {
-    fn eq(&self, other: &Self) -> bool {
-        self.rent(|s| other.rent(|o| s == o))
+impl Default for LineValue {
+    fn default() -> Self {
+        Self::new(Vec::default(), |_| ValueAndMeta::default())
     }
 }
 
-pub use rentals::Value as LineValue;
+impl PartialEq for LineValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow_dependent() == other.borrow_dependent()
+    }
+}
 
 pub(crate) const NO_AGGRS: [InvokeAggrFn<'static>; 0] = [];
 lazy_static! {

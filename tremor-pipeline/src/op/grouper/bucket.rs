@@ -149,7 +149,7 @@ impl Operator for Grouper {
         _state: &mut Value<'static>,
         event: Event,
     ) -> Result<EventAndInsights> {
-        let meta = event.data.suffix().meta();
+        let meta = event.data.borrow_dependent().meta();
         if let Some(class) = meta.get_str("class") {
             let (_, groups) = self
                 .buckets

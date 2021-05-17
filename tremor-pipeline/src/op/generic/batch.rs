@@ -78,64 +78,65 @@ impl Operator for Batch {
         _state: &mut Value<'static>,
         event: Event,
     ) -> Result<EventAndInsights> {
-        // TODO: This is ugly
-        let Event {
-            id,
-            data,
-            ingest_ns,
-            is_batch,
-            transactional,
-            ..
-        } = event;
-        self.batch_event_id.track(&id);
-        self.is_transactional = self.is_transactional || transactional;
-        self.data.consume(
-            data,
-            move |this: &mut ValueAndMeta<'static>, other: ValueAndMeta<'static>| -> Result<()> {
-                if let Some(ref mut a) = this.value_mut().as_array_mut() {
-                    let (value, meta) = other.into_parts();
-                    let e = literal!({
-                        "data": {
-                            "value": value,
-                            "meta": meta,
-                            "ingest_ns": ingest_ns,
-                            "kind": Value::null(),
-                            "is_batch": is_batch
-                        }
-                    });
-                    a.push(e)
-                };
-                Ok(())
-            },
-        )?;
-        self.len += 1;
-        if self.len == 1 {
-            self.first_ns = ingest_ns;
-        };
-        let flush = match self.max_delay_ns {
-            Some(t) if ingest_ns - self.first_ns > t => true,
-            _ => self.len == self.config.count,
-        };
-        if flush {
-            //TODO: This is ugly
-            let mut data = empty();
-            swap(&mut data, &mut self.data);
-            self.len = 0;
+        todo!()
+        // // TODO: This is ugly
+        // let Event {
+        //     id,
+        //     data,
+        //     ingest_ns,
+        //     is_batch,
+        //     transactional,
+        //     ..
+        // } = event;
+        // self.batch_event_id.track(&id);
+        // self.is_transactional = self.is_transactional || transactional;
+        // self.data.consume(
+        //     data,
+        //     move |this: &mut ValueAndMeta<'static>, other: ValueAndMeta<'static>| -> Result<()> {
+        //         if let Some(ref mut a) = this.value_mut().as_array_mut() {
+        //             let (value, meta) = other.into_parts();
+        //             let e = literal!({
+        //                 "data": {
+        //                     "value": value,
+        //                     "meta": meta,
+        //                     "ingest_ns": ingest_ns,
+        //                     "kind": Value::null(),
+        //                     "is_batch": is_batch
+        //                 }
+        //             });
+        //             a.push(e)
+        //         };
+        //         Ok(())
+        //     },
+        // )?;
+        // self.len += 1;
+        // if self.len == 1 {
+        //     self.first_ns = ingest_ns;
+        // };
+        // let flush = match self.max_delay_ns {
+        //     Some(t) if ingest_ns - self.first_ns > t => true,
+        //     _ => self.len == self.config.count,
+        // };
+        // if flush {
+        //     //TODO: This is ugly
+        //     let mut data = empty();
+        //     swap(&mut data, &mut self.data);
+        //     self.len = 0;
 
-            let mut event = Event {
-                id: self.event_id_gen.next_id(),
-                data,
-                ingest_ns: self.first_ns,
-                is_batch: true,
-                transactional: self.is_transactional,
-                ..Event::default()
-            };
-            self.is_transactional = false;
-            swap(&mut self.batch_event_id, &mut event.id);
-            Ok(event.into())
-        } else {
-            Ok(EventAndInsights::default())
-        }
+        //     let mut event = Event {
+        //         id: self.event_id_gen.next_id(),
+        //         data,
+        //         ingest_ns: self.first_ns,
+        //         is_batch: true,
+        //         transactional: self.is_transactional,
+        //         ..Event::default()
+        //     };
+        //     self.is_transactional = false;
+        //     swap(&mut self.batch_event_id, &mut event.id);
+        //     Ok(event.into())
+        // } else {
+        //     Ok(EventAndInsights::default())
+        // }
     }
 
     fn handles_signal(&self) -> bool {
@@ -234,7 +235,10 @@ mod test {
         let events: Vec<&Value> = event.value_iter().collect();
         assert_eq!(
             events,
-            vec![event1.data.suffix().value(), event2.data.suffix().value()]
+            vec![
+                event1.data.borrow_dependent().value(),
+                event2.data.borrow_dependent().value()
+            ]
         );
 
         let event = Event {
@@ -297,7 +301,10 @@ mod test {
         let events: Vec<&Value> = event.value_iter().collect();
         assert_eq!(
             events,
-            vec![event1.data.suffix().value(), event2.data.suffix().value()]
+            vec![
+                event1.data.borrow_dependent().value(),
+                event2.data.borrow_dependent().value()
+            ]
         );
 
         let event = Event {
@@ -375,7 +382,7 @@ mod test {
         assert_eq!(true, event.transactional);
 
         let events: Vec<&Value> = event.value_iter().collect();
-        assert_eq!(events, vec![event1.data.suffix().value()]);
+        assert_eq!(events, vec![event1.data.borrow_dependent().value()]);
 
         let event = Event {
             id: (1, 1, 1).into(),

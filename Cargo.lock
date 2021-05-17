@@ -4793,6 +4793,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "self_cell"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1c924e8e521faa453317ab6887122657f1855e9c46f0fb5e6b4bdc3be845353"
+
+[[package]]
 name = "semver"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6436,6 +6442,7 @@ dependencies = [
  "rand 0.8.3",
  "regex",
  "rental",
+ "self_cell",
  "serde",
  "serde_derive",
  "simd-json",

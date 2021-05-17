@@ -167,7 +167,7 @@ impl Operator for Backpressure {
         if !insight.op_meta.contains_key(uid) {
             return;
         }
-        let (_, meta) = insight.data.parts();
+        let meta = insight.data.borrow_dependent().meta();
 
         let Backpressure {
             ref mut output,
