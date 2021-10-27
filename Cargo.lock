@@ -2282,7 +2282,7 @@ checksum = "8894a4cb9b32a73030f2c2dd6a251114d5ec62fb786d011850ae98cdfb8d2ff2"
 dependencies = [
  "prost",
  "prost-types",
- "tonic",
+ "tonic 0.5.2",
 ]
 
 [[package]]
@@ -2538,9 +2538,9 @@ dependencies = [
 
 [[package]]
 name = "http-body"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "399c583b2979440c60be0821a6199eca73bc3c8dcd9d070d75ac726e2c6186e5"
+checksum = "1ff4f84919677303da5f147645dbea6b1881f368d03ac84e1dc09031ebd7b2c6"
 dependencies = [
  "bytes 1.1.0",
  "http 0.2.5",
@@ -2664,9 +2664,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.14.13"
+version = "0.14.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d1cfb9e4f68655fa04c01f59edb405b6074a0f7118ea881e5026e4a1cd8593"
+checksum = "2b91bb1f221b6ea1f1e4371216b70f40748774c2fb5971b450c07773fb92d26b"
 dependencies = [
  "bytes 1.1.0",
  "futures-channel",
@@ -2674,7 +2674,7 @@ dependencies = [
  "futures-util",
  "h2 0.3.6",
  "http 0.2.5",
- "http-body 0.4.3",
+ "http-body 0.4.4",
  "httparse",
  "httpdate 1.0.1",
  "itoa",
@@ -2693,7 +2693,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f9f7a97316d44c0af9b0301e65010573a853a9fc97046d7331d7f6bc0fd5a64"
 dependencies = [
  "futures-util",
- "hyper 0.14.13",
+ "hyper 0.14.14",
  "log",
  "rustls 0.19.1",
  "tokio 1.12.0",
@@ -2707,7 +2707,7 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
 dependencies = [
- "hyper 0.14.13",
+ "hyper 0.14.14",
  "pin-project-lite 0.2.7",
  "tokio 1.12.0",
  "tokio-io-timeout",
@@ -2733,7 +2733,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
 dependencies = [
  "bytes 1.1.0",
- "hyper 0.14.13",
+ "hyper 0.14.14",
  "native-tls",
  "tokio 1.12.0",
  "tokio-native-tls",
@@ -4792,8 +4792,8 @@ dependencies = [
  "futures-core",
  "futures-util",
  "http 0.2.5",
- "http-body 0.4.3",
- "hyper 0.14.13",
+ "http-body 0.4.4",
+ "hyper 0.14.14",
  "hyper-rustls",
  "hyper-tls 0.5.0",
  "ipnet",
@@ -6419,13 +6419,41 @@ dependencies = [
  "futures-util",
  "h2 0.3.6",
  "http 0.2.5",
- "http-body 0.4.3",
- "hyper 0.14.13",
+ "http-body 0.4.4",
+ "hyper 0.14.14",
  "hyper-timeout",
  "percent-encoding 2.1.0",
  "pin-project 1.0.8",
  "prost",
  "prost-derive",
+ "tokio 1.12.0",
+ "tokio-stream",
+ "tokio-util 0.6.8",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "tonic"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24203b79cf2d68909da91178db3026e77054effba0c5d93deb870d3ca7b35afa"
+dependencies = [
+ "async-stream",
+ "base64 0.13.0",
+ "bytes 1.1.0",
+ "futures-core",
+ "futures-util",
+ "h2 0.3.6",
+ "http 0.2.5",
+ "http-body 0.4.4",
+ "hyper 0.14.14",
+ "hyper-timeout",
+ "percent-encoding 2.1.0",
+ "pin-project 1.0.8",
  "tokio 1.12.0",
  "tokio-rustls",
  "tokio-stream",
@@ -6640,7 +6668,7 @@ checksum = "5c029f406f53b2d4df45f19a1235c0f842c453abd909e53891b4918f0aed5e48"
 dependencies = [
  "async-channel",
  "prost",
- "tonic",
+ "tonic 0.5.2",
  "tonic-build",
 ]
 
@@ -6754,7 +6782,7 @@ dependencies = [
  "test-case",
  "tide",
  "tokio-postgres",
- "tonic",
+ "tonic 0.6.1",
  "tremor-common",
  "tremor-influx",
  "tremor-otelapis",
